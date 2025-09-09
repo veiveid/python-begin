@@ -1,0 +1,3267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Guess the Word — Simple Game</title>
+  <style>
+    :root{--bg:#f4f7fb;--card:#ffffff;--accent:#4f46e5;--muted:#6b7280;--success:#10b981}
+    *{box-sizing:border-box;font-family:Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+    body{margin:0;background:linear-gradient(180deg,#eaf2ff 0%,var(--bg) 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    .container{width:100%;max-width:900px;background:var(--card);border-radius:12px;box-shadow:0 8px 30px rgba(20,24,40,0.08);padding:28px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+    h1{margin:0;font-size:20px;color:#0f172a}
+    .score{font-weight:600;color:var(--accent)}
+
+    .game{display:grid;grid-template-columns:1fr 300px;gap:20px}
+    .panel{padding:18px;border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,0.6),rgba(250,250,255,0.6));}
+
+    .word-display{font-size:34px;letter-spacing:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .letter{width:44px;height:60px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:#f8fafc;border:1px dashed #e6edf8;color:#0f172a;font-weight:700}
+    .letter.revealed{background:#eef2ff;border-style:solid}
+    .letter.hint{color:#b91c1c;background:#fff0f0;border-color:#fecaca}
+
+    .controls{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+    input[type="text"]{padding:10px 12px;border-radius:8px;border:1px solid #e6edf8;font-size:16px}
+    .row{display:flex;gap:8px}
+    button{appearance:none;border:0;padding:10px 12px;border-radius:8px;font-weight:600;cursor:pointer}
+    .btn-primary{background:var(--accent);color:white}
+    .btn-ghost{background:transparent;border:1px solid #e6edf8;color:var(--muted)}
+    .hint-area{font-size:14px;color:var(--muted)}
+
+    .log{font-size:14px;min-height:22px}
+
+    .right-col{display:flex;flex-direction:column;gap:12px}
+    .stats{display:flex;gap:12px;align-items:center}
+    .stat-card{flex:1;padding:12px;border-radius:10px;background:linear-gradient(180deg,#fff,#f8fbff);text-align:center}
+    .stat-card .num{font-size:28px;font-weight:800;color:var(--accent)}
+    .small{font-size:13px;color:var(--muted)}
+
+    .confetti{position:fixed;left:0;right:0;top:0;bottom:0;pointer-events:none;overflow:hidden}
+    .confetti .piece{position:absolute;width:10px;height:14px;opacity:0.95;transform-origin:center;animation:fall 1500ms linear forwards}
+    @keyframes fall{to{transform:translateY(120vh) rotate(720deg);opacity:0}}
+
+    footer{margin-top:16px;font-size:13px;color:var(--muted);text-align:center}
+
+    @media (max-width:880px){.game{grid-template-columns:1fr} .word-display{font-size:26px} .letter{width:40px;height:48px}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Guess the Word</h1>
+      <div class="score">Correct words: <span id="score">0</span></div>
+    </header>
+
+    <div class="game">
+      <div class="panel">
+        <div class="word-display" id="wordDisplay" aria-live="polite"></div>
+		<div class="" ><span id="phonetic"></span><span id="wordMeaning"></span></div>
+
+        <div class="controls">
+          <div class="row">
+            <input id="guessInput" type="text" placeholder="Type your guess here (full word)" autocomplete="off" />
+            <button id="guessBtn" class="btn-primary">Guess</button>
+          </div>
+
+          <div class="row">
+            <button id="hintBtn" class="btn-ghost">Hint (reveal 1 letter)</button>
+            <button id="nextBtn" class="btn-ghost">Next Word</button>
+          </div>
+
+          <div class="hint-area">Tip: You can guess as many times as you like. Use the Hint button to reveal one unknown letter (marked red).</div>
+        </div>
+
+        <div style="margin-top:14px" class="log" id="message"></div>
+      </div>
+
+      <aside class="right-col">
+        <div class="stat-card">
+          <div class="small">Correct Words</div>
+          <div class="num" id="correctCount">0</div>
+        </div>
+
+        <div class="panel" style="padding:12px">
+          <div class="small">Guessed Letters</div>
+          <div id="guessedLetters" style="margin-top:8px;color:var(--muted)"></div>
+        </div>
+
+        <div class="panel" style="padding:12px">
+          <div class="small">Word Length</div>
+          <div id="wordLength" style="margin-top:8px;font-weight:700;color:#0f172a"></div>
+        </div>
+      </aside>
+    </div>
+
+    <footer>Made for practice • Unlimited guesses • Hint reveals one random unguessed letter</footer>
+  </div>
+
+  <div class="confetti" id="confetti"></div>
+
+  <!-- Audio effects -->
+  <audio id="sound-correct" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
+  <audio id="sound-wrong" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"></audio>
+  <audio id="sound-complete" src="https://actions.google.com/sounds/v1/ambiences/bell_transition.ogg"></audio>
+
+  <script>
+    (function(){
+      const WORDS = [
+        {
+			"word": "a",
+			"phonetic": "/ə, eɪ/",
+			"meaning": "used before nouns to refer to one or any"
+		  },
+		  {
+			"word": "ability",
+			"phonetic": "/əˈbɪlɪti/",
+			"meaning": "the power or skill to do something"
+		  },
+		  {
+			"word": "able",
+			"phonetic": "/ˈeɪbəl/",
+			"meaning": "having the power, skill, or means to do something"
+		  },
+		  {
+			"word": "about",
+			"phonetic": "/əˈbaʊt/",
+			"meaning": "on the subject of; roughly"
+		  },
+		  {
+			"word": "above",
+			"phonetic": "/əˈbʌv/",
+			"meaning": "higher than; over"
+		  },
+		  {
+			"word": "accept",
+			"phonetic": "/əkˈsɛpt/",
+			"meaning": "to agree to take or receive"
+		  },
+		  {
+			"word": "according",
+			"phonetic": "/əˈkɔːrdɪŋ/",
+			"meaning": "as stated by or in"
+		  },
+		  {
+			"word": "account",
+			"phonetic": "/əˈkaʊnt/",
+			"meaning": "a record or report of money or events"
+		  },
+		  {
+			"word": "across",
+			"phonetic": "/əˈkrɔs/",
+			"meaning": "from one side to the other"
+		  },
+		  {
+			"word": "act",
+			"phonetic": "/ækt/",
+			"meaning": "to do something; a law or performance"
+		  },
+		  {
+			"word": "action",
+			"phonetic": "/ˈækʃən/",
+			"meaning": "the process of doing something"
+		  },
+		  {
+			"word": "activity",
+			"phonetic": "/ækˈtɪvɪti/",
+			"meaning": "something done for a purpose"
+		  },
+		  {
+			"word": "actually",
+			"phonetic": "/ˈækʃuəli/",
+			"meaning": "in fact; really"
+		  },
+		  {
+			"word": "add",
+			"phonetic": "/æd/",
+			"meaning": "to put together or increase"
+		  },
+		  {
+			"word": "address",
+			"phonetic": "/əˈdrɛs/",
+			"meaning": "details of where someone lives or speaks to someone"
+		  },
+		  {
+			"word": "administration",
+			"phonetic": "/ədˌmɪnɪˈstreɪʃən/",
+			"meaning": "management of operations or government"
+		  },
+		  {
+			"word": "admit",
+			"phonetic": "/ədˈmɪt/",
+			"meaning": "to agree that something is true; to allow entry"
+		  },
+		  {
+			"word": "adult",
+			"phonetic": "/ˈædʌlt/",
+			"meaning": "a fully grown person"
+		  },
+		  {
+			"word": "affect",
+			"phonetic": "/əˈfɛkt/",
+			"meaning": "to influence"
+		  },
+		  {
+			"word": "after",
+			"phonetic": "/ˈæftər/",
+			"meaning": "later in time"
+		  },
+		  {
+			"word": "again",
+			"phonetic": "/əˈɡɛn/",
+			"meaning": "one more time"
+		  },
+		  {
+			"word": "against",
+			"phonetic": "/əˈɡɛnst/",
+			"meaning": "in opposition to"
+		  },
+		  {
+			"word": "age",
+			"phonetic": "/eɪdʒ/",
+			"meaning": "how old someone or something is"
+		  },
+		  {
+			"word": "agency",
+			"phonetic": "/ˈeɪdʒənsi/",
+			"meaning": "an organization that provides a service"
+		  },
+		  {
+			"word": "agent",
+			"phonetic": "/ˈeɪdʒənt/",
+			"meaning": "a person who acts for another"
+		  },
+		  {
+			"word": "ago",
+			"phonetic": "/əˈɡoʊ/",
+			"meaning": "before now"
+		  },
+		  {
+			"word": "agree",
+			"phonetic": "/əˈɡriː/",
+			"meaning": "to have the same opinion; to accept"
+		  },
+		  {
+			"word": "agreement",
+			"phonetic": "/əˈɡriːmənt/",
+			"meaning": "a decision or contract made between people"
+		  },
+		  {
+			"word": "ahead",
+			"phonetic": "/əˈhɛd/",
+			"meaning": "in front; in the future"
+		  },
+		  {
+			"word": "air",
+			"phonetic": "/ɛr/",
+			"meaning": "the mixture of gases we breathe"
+		  },
+		  {
+			"word": "all",
+			"phonetic": "/ɔːl/",
+			"meaning": "every one; everything"
+		  },
+		  {
+			"word": "allow",
+			"phonetic": "/əˈlaʊ/",
+			"meaning": "to permit"
+		  },
+		  {
+			"word": "almost",
+			"phonetic": "/ˈɔːlmoʊst/",
+			"meaning": "nearly"
+		  },
+		  {
+			"word": "alone",
+			"phonetic": "/əˈloʊn/",
+			"meaning": "by oneself; without others"
+		  },
+		  {
+			"word": "along",
+			"phonetic": "/əˈlɔːŋ/",
+			"meaning": "moving in a line or beside"
+		  },
+		  {
+			"word": "already",
+			"phonetic": "/ɔːlˈrɛdi/",
+			"meaning": "before now"
+		  },
+		  {
+			"word": "also",
+			"phonetic": "/ˈɔːlsoʊ/",
+			"meaning": "in addition"
+		  },
+		  {
+			"word": "although",
+			"phonetic": "/ɔːlˈðoʊ/",
+			"meaning": "in spite of the fact that"
+		  },
+		  {
+			"word": "always",
+			"phonetic": "/ˈɔːlweɪz/",
+			"meaning": "at all times"
+		  },
+		  {
+			"word": "American",
+			"phonetic": "/əˈmɛrɪkən/",
+			"meaning": "relating to the United States of America"
+		  },
+		  {
+			"word": "among",
+			"phonetic": "/əˈmʌŋ/",
+			"meaning": "in the middle of, or with a group"
+		  },
+		  {
+			"word": "amount",
+			"phonetic": "/əˈmaʊnt/",
+			"meaning": "a quantity of something"
+		  },
+		  {
+			"word": "analysis",
+			"phonetic": "/əˈnæləsɪs/",
+			"meaning": "detailed examination of something"
+		  },
+		  {
+			"word": "and",
+			"phonetic": "/ænd/",
+			"meaning": "used to connect words or phrases"
+		  },
+		  {
+			"word": "animal",
+			"phonetic": "/ˈænəməl/",
+			"meaning": "a living creature that is not a plant"
+		  },
+		  {
+			"word": "another",
+			"phonetic": "/əˈnʌðər/",
+			"meaning": "one more; an additional one"
+		  },
+		  {
+			"word": "answer",
+			"phonetic": "/ˈænsər/",
+			"meaning": "a response to a question"
+		  },
+		  {
+			"word": "any",
+			"phonetic": "/ˈɛni/",
+			"meaning": "one or some; no matter which"
+		  },
+		  {
+			"word": "anyone",
+			"phonetic": "/ˈɛniˌwʌn/",
+			"meaning": "any person"
+		  },
+		  {
+			"word": "anything",
+			"phonetic": "/ˈɛniˌθɪŋ/",
+			"meaning": "any object, event, or matter"
+		  },
+		  {
+			"word": "appear",
+			"phonetic": "/əˈpɪr/",
+			"meaning": "to become visible; to seem"
+		  },
+		  {
+			"word": "apply",
+			"phonetic": "/əˈplaɪ/",
+			"meaning": "to make a formal request; to put on"
+		  },
+		  {
+			"word": "approach",
+			"phonetic": "/əˈproʊtʃ/",
+			"meaning": "to come near; a way of doing something"
+		  },
+		  {
+			"word": "area",
+			"phonetic": "/ˈɛriə/",
+			"meaning": "a region or space"
+		  },
+		  {
+			"word": "argue",
+			"phonetic": "/ˈɑrɡjuː/",
+			"meaning": "to disagree or give reasons for"
+		  },
+		  {
+			"word": "arm",
+			"phonetic": "/ɑrm/",
+			"meaning": "the limb from shoulder to hand; weapon"
+		  },
+		  {
+			"word": "around",
+			"phonetic": "/əˈraʊnd/",
+			"meaning": "surrounding; near"
+		  },
+		  {
+			"word": "arrive",
+			"phonetic": "/əˈraɪv/",
+			"meaning": "to reach a place"
+		  },
+		  {
+			"word": "art",
+			"phonetic": "/ɑrt/",
+			"meaning": "creative work like painting or music"
+		  },
+		  {
+			"word": "article",
+			"phonetic": "/ˈɑrtɪkəl/",
+			"meaning": "a piece of writing in a newspaper or magazine"
+		  },
+		  {
+			"word": "artist",
+			"phonetic": "/ˈɑrtɪst/",
+			"meaning": "a person who creates art"
+		  },
+		  {
+			"word": "as",
+			"phonetic": "/æz/",
+			"meaning": "used for comparison or because"
+		  },
+		  {
+			"word": "ask",
+			"phonetic": "/æsk/",
+			"meaning": "to request information or action"
+		  },
+		  {
+			"word": "assume",
+			"phonetic": "/əˈsum/",
+			"meaning": "to suppose something is true"
+		  },
+		  {
+			"word": "at",
+			"phonetic": "/æt/",
+			"meaning": "used to indicate place or time"
+		  },
+		  {
+			"word": "attack",
+			"phonetic": "/əˈtæk/",
+			"meaning": "to try to hurt or criticize"
+		  },
+		  {
+			"word": "attention",
+			"phonetic": "/əˈtɛnʃən/",
+			"meaning": "notice or care given to something"
+		  },
+		  {
+			"word": "attorney",
+			"phonetic": "/əˈtɜrni/",
+			"meaning": "a lawyer"
+		  },
+		  {
+			"word": "audience",
+			"phonetic": "/ˈɔːdiəns/",
+			"meaning": "a group of listeners or viewers"
+		  },
+		  {
+			"word": "author",
+			"phonetic": "/ˈɔːθər/",
+			"meaning": "a writer of books or articles"
+		  },
+		  {
+			"word": "authority",
+			"phonetic": "/əˈθɔrɪti/",
+			"meaning": "the power to make decisions or command"
+		  },
+		  {
+			"word": "available",
+			"phonetic": "/əˈveɪləbəl/",
+			"meaning": "able to be used or obtained"
+		  },
+		  {
+			"word": "avoid",
+			"phonetic": "/əˈvɔɪd/",
+			"meaning": "to stay away from"
+		  },
+		  {
+			"word": "away",
+			"phonetic": "/əˈweɪ/",
+			"meaning": "at a distance from a place"
+		  },
+		  {
+			"word": "baby",
+			"phonetic": "/ˈbeɪbi/",
+			"meaning": "a very young child"
+		  },
+		  {
+			"word": "back",
+			"phonetic": "/bæk/",
+			"meaning": "the rear part; to return"
+		  },
+		  {
+			"word": "bad",
+			"phonetic": "/bæd/",
+			"meaning": "not good; harmful"
+		  },
+		  {
+			"word": "bag",
+			"phonetic": "/bæɡ/",
+			"meaning": "a container made of flexible material"
+		  },
+		  {
+			"word": "ball",
+			"phonetic": "/bɔːl/",
+			"meaning": "a round object used in games"
+		  },
+		  {
+			"word": "bank",
+			"phonetic": "/bæŋk/",
+			"meaning": "a financial institution"
+		  },
+		  {
+			"word": "bar",
+			"phonetic": "/bɑr/",
+			"meaning": "a long rod; a place selling drinks"
+		  },
+		  {
+			"word": "base",
+			"phonetic": "/beɪs/",
+			"meaning": "foundation or starting point"
+		  },
+		  {
+			"word": "be",
+			"phonetic": "/biː/",
+			"meaning": "to exist; linking verb"
+		  },
+		  {
+			"word": "beat",
+			"phonetic": "/biːt/",
+			"meaning": "to strike; to win"
+		  },
+		  {
+			"word": "beautiful",
+			"phonetic": "/ˈbjuːtəfəl/",
+			"meaning": "very attractive"
+		  },
+		  {
+			"word": "because",
+			"phonetic": "/bɪˈkɔz/",
+			"meaning": "for the reason that"
+		  },
+		  {
+			"word": "become",
+			"phonetic": "/bɪˈkʌm/",
+			"meaning": "to begin to be"
+		  },
+		  {
+			"word": "bed",
+			"phonetic": "/bɛd/",
+			"meaning": "furniture for sleeping"
+		  },
+		  {
+			"word": "before",
+			"phonetic": "/bɪˈfɔr/",
+			"meaning": "earlier than"
+		  },
+		  {
+			"word": "begin",
+			"phonetic": "/bɪˈɡɪn/",
+			"meaning": "to start"
+		  },
+		  {
+			"word": "behavior",
+			"phonetic": "/bɪˈheɪvjər/",
+			"meaning": "the way someone acts"
+		  },
+		  {
+			"word": "behind",
+			"phonetic": "/bɪˈhaɪnd/",
+			"meaning": "at the back of"
+		  },
+		  {
+			"word": "believe",
+			"phonetic": "/bɪˈliːv/",
+			"meaning": "to accept as true"
+		  },
+		  {
+			"word": "benefit",
+			"phonetic": "/ˈbɛnəfɪt/",
+			"meaning": "an advantage or help"
+		  },
+		  {
+			"word": "best",
+			"phonetic": "/bɛst/",
+			"meaning": "the most good or desirable"
+		  },
+		  {
+			"word": "better",
+			"phonetic": "/ˈbɛtər/",
+			"meaning": "more good; improved"
+		  },
+		  {
+			"word": "between",
+			"phonetic": "/bɪˈtwin/",
+			"meaning": "in the middle of two"
+		  },
+		  {
+			"word": "beyond",
+			"phonetic": "/bɪˈjɑnd/",
+			"meaning": "further than; outside the range of"
+		  },
+		  {
+			"word": "big",
+			"phonetic": "/bɪɡ/",
+			"meaning": "large in size"
+		  },
+		  {
+			"word": "bill",
+			"phonetic": "/bɪl/",
+			"meaning": "a statement of money owed; proposed law"
+		  },
+		  {
+			"word": "billion",
+			"phonetic": "/ˈbɪljən/",
+			"meaning": "one thousand million (1,000,000,000)"
+		  },
+		  {
+			"word": "bit",
+			"phonetic": "/bɪt/",
+			"meaning": "a small piece"
+		  },
+		  {
+			"word": "black",
+			"phonetic": "/blæk/",
+			"meaning": "the darkest color"
+		  },
+		  {
+			"word": "blood",
+			"phonetic": "/blʌd/",
+			"meaning": "the red fluid in bodies"
+		  },
+		  {
+			"word": "blue",
+			"phonetic": "/bluː/",
+			"meaning": "the color of the sky"
+		  },
+		  {
+			"word": "board",
+			"phonetic": "/bɔrd/",
+			"meaning": "a flat piece of material; committee"
+		  },
+		  {
+			"word": "body",
+			"phonetic": "/ˈbɑdi/",
+			"meaning": "the physical structure of a person or animal"
+		  },
+		  {
+			"word": "book",
+			"phonetic": "/bʊk/",
+			"meaning": "a set of written pages bound together"
+		  },
+		  {
+			"word": "born",
+			"phonetic": "/bɔrn/",
+			"meaning": "brought into life at birth"
+		  },
+		  {
+			"word": "both",
+			"phonetic": "/boʊθ/",
+			"meaning": "the two together"
+		  },
+		  {
+			"word": "box",
+			"phonetic": "/bɑks/",
+			"meaning": "a container with sides"
+		  },
+		  {
+			"word": "boy",
+			"phonetic": "/bɔɪ/",
+			"meaning": "a male child"
+		  },
+		  {
+			"word": "break",
+			"phonetic": "/breɪk/",
+			"meaning": "to separate into pieces; a pause"
+		  },
+		  {
+			"word": "bring",
+			"phonetic": "/brɪŋ/",
+			"meaning": "to carry something to a place"
+		  },
+		  {
+			"word": "brother",
+			"phonetic": "/ˈbrʌðər/",
+			"meaning": "a male sibling"
+		  },
+		  {
+			"word": "budget",
+			"phonetic": "/ˈbʌdʒɪt/",
+			"meaning": "a plan for spending money"
+		  },
+		  {
+			"word": "build",
+			"phonetic": "/bɪld/",
+			"meaning": "to construct"
+		  },
+		  {
+			"word": "building",
+			"phonetic": "/ˈbɪldɪŋ/",
+			"meaning": "a structure with walls and a roof"
+		  },
+		  {
+			"word": "business",
+			"phonetic": "/ˈbɪznəs/",
+			"meaning": "work or trade for money"
+		  },
+		  {
+			"word": "but",
+			"phonetic": "/bʌt/",
+			"meaning": "however; except"
+		  },
+		  {
+			"word": "buy",
+			"phonetic": "/baɪ/",
+			"meaning": "to obtain by paying money"
+		  },
+		  {
+			"word": "by",
+			"phonetic": "/baɪ/",
+			"meaning": "indicates the agent or means"
+		  },
+		  {
+			"word": "call",
+			"phonetic": "/kɔl/",
+			"meaning": "to cry out; to phone"
+		  },
+		  {
+			"word": "camera",
+			"phonetic": "/ˈkæmərə/",
+			"meaning": "a device for taking pictures"
+		  },
+		  {
+			"word": "campaign",
+			"phonetic": "/kæmˈpeɪn/",
+			"meaning": "an organized series of activities to achieve a goal"
+		  },
+		  {
+			"word": "can",
+			"phonetic": "/kæn/",
+			"meaning": "to be able to; a container"
+		  },
+		  {
+			"word": "cancer",
+			"phonetic": "/ˈkænsər/",
+			"meaning": "a disease caused by abnormal cells"
+		  },
+		  {
+			"word": "candidate",
+			"phonetic": "/ˈkændɪˌdeɪt/",
+			"meaning": "a person who applies for a job or runs for office"
+		  },
+		  {
+			"word": "capital",
+			"phonetic": "/ˈkæpɪtəl/",
+			"meaning": "a city where a government sits; money for business"
+		  },
+		  {
+			"word": "car",
+			"phonetic": "/kɑr/",
+			"meaning": "a road vehicle with wheels"
+		  },
+		  {
+			"word": "card",
+			"phonetic": "/kɑrd/",
+			"meaning": "a piece of thick paper used for messages or payments"
+		  },
+		  {
+			"word": "care",
+			"phonetic": "/kɛr/",
+			"meaning": "attention or protection"
+		  },
+		  {
+			"word": "career",
+			"phonetic": "/kəˈrɪr/",
+			"meaning": "a person's long-term job or profession"
+		  },
+		  {
+			"word": "carry",
+			"phonetic": "/ˈkæri/",
+			"meaning": "to hold and move something"
+		  },
+		  {
+			"word": "case",
+			"phonetic": "/keɪs/",
+			"meaning": "an instance or container"
+		  },
+		  {
+			"word": "catch",
+			"phonetic": "/kætʃ/",
+			"meaning": "to capture"
+		  },
+		  {
+			"word": "cause",
+			"phonetic": "/kɔz/",
+			"meaning": "a reason something happens"
+		  },
+		  {
+			"word": "cell",
+			"phonetic": "/sɛl/",
+			"meaning": "a small room or biological unit"
+		  },
+		  {
+			"word": "center",
+			"phonetic": "/ˈsɛntər/",
+			"meaning": "the middle point"
+		  },
+		  {
+			"word": "central",
+			"phonetic": "/ˈsɛntrəl/",
+			"meaning": "in the middle; important"
+		  },
+		  {
+			"word": "century",
+			"phonetic": "/ˈsɛnʧəri/",
+			"meaning": "a period of 100 years"
+		  },
+		  {
+			"word": "certain",
+			"phonetic": "/ˈsɜrtən/",
+			"meaning": "sure; particular"
+		  },
+		  {
+			"word": "certainly",
+			"phonetic": "/ˈsɜrtənli/",
+			"meaning": "definitely; for sure"
+		  },
+		  {
+			"word": "chair",
+			"phonetic": "/ʧɛr/",
+			"meaning": "a seat for one person"
+		  },
+		  {
+			"word": "challenge",
+			"phonetic": "/ˈʧælɪnʤ/",
+			"meaning": "a difficult task"
+		  },
+		  {
+			"word": "chance",
+			"phonetic": "/ʧæns/",
+			"meaning": "an opportunity; possibility"
+		  },
+		  {
+			"word": "change",
+			"phonetic": "/ʧeɪndʒ/",
+			"meaning": "to make different; coins given back"
+		  },
+		  {
+			"word": "character",
+			"phonetic": "/ˈkærəktər/",
+			"meaning": "a person's qualities; a symbol in writing"
+		  },
+		  {
+			"word": "charge",
+			"phonetic": "/ʧɑrdʒ/",
+			"meaning": "to ask for payment; to attack"
+		  },
+		  {
+			"word": "check",
+			"phonetic": "/ʧɛk/",
+			"meaning": "to examine or a written order to pay"
+		  },
+		  {
+			"word": "child",
+			"phonetic": "/ʧaɪld/",
+			"meaning": "a young person"
+		  },
+		  {
+			"word": "choice",
+			"phonetic": "/ʧɔɪs/",
+			"meaning": "an option"
+		  },
+		  {
+			"word": "choose",
+			"phonetic": "/ʧuz/",
+			"meaning": "to select"
+		  },
+		  {
+			"word": "church",
+			"phonetic": "/ʧɜrʧ/",
+			"meaning": "a building for Christian worship"
+		  },
+		  {
+			"word": "citizen",
+			"phonetic": "/ˈsɪtəzən/",
+			"meaning": "a member of a country"
+		  },
+		  {
+			"word": "city",
+			"phonetic": "/ˈsɪti/",
+			"meaning": "a large town"
+		  },
+		  {
+			"word": "civil",
+			"phonetic": "/ˈsɪvəl/",
+			"meaning": "relating to citizens or non-military matters"
+		  },
+		  {
+			"word": "claim",
+			"phonetic": "/kleɪm/",
+			"meaning": "to state something is true"
+		  },
+		  {
+			"word": "class",
+			"phonetic": "/klæs/",
+			"meaning": "a group or a lesson"
+		  },
+		  {
+			"word": "clear",
+			"phonetic": "/klɪr/",
+			"meaning": "easy to understand; free of obstructions"
+		  },
+		  {
+			"word": "clearly",
+			"phonetic": "/ˈklɪrli/",
+			"meaning": "in a clear way"
+		  },
+		  {
+			"word": "close",
+			"phonetic": "/kloʊs/",
+			"meaning": "near; to shut"
+		  },
+		  {
+			"word": "coach",
+			"phonetic": "/koʊʧ/",
+			"meaning": "a trainer or bus"
+		  },
+		  {
+			"word": "cold",
+			"phonetic": "/koʊld/",
+			"meaning": "low in temperature"
+		  },
+		  {
+			"word": "collection",
+			"phonetic": "/kəˈlɛkʃən/",
+			"meaning": "a group of objects gathered together"
+		  },
+		  {
+			"word": "college",
+			"phonetic": "/ˈkɑlɪʤ/",
+			"meaning": "an institution of higher learning"
+		  },
+		  {
+			"word": "color",
+			"phonetic": "/ˈkʌlər/",
+			"meaning": "the property of making things red, blue, etc."
+		  },
+		  {
+			"word": "come",
+			"phonetic": "/kʌm/",
+			"meaning": "to move toward or arrive at a place"
+		  },
+		  {
+			"word": "commercial",
+			"phonetic": "/kəˈmɜrʃəl/",
+			"meaning": "related to business or trade"
+		  },
+		  {
+			"word": "common",
+			"phonetic": "/ˈkɑmən/",
+			"meaning": "usual or shared by many"
+		  },
+		  {
+			"word": "community",
+			"phonetic": "/kəˈmjunəti/",
+			"meaning": "a group of people living in the same area"
+		  },
+		  {
+			"word": "company",
+			"phonetic": "/ˈkʌmpəni/",
+			"meaning": "a business organization"
+		  },
+		  {
+			"word": "compare",
+			"phonetic": "/kəmˈpɛr/",
+			"meaning": "to examine similarities and differences"
+		  },
+		  {
+			"word": "computer",
+			"phonetic": "/kəmˈpjutər/",
+			"meaning": "an electronic device for processing data"
+		  },
+		  {
+			"word": "concern",
+			"phonetic": "/kənˈsɜrn/",
+			"meaning": "a matter of interest or worry"
+		  },
+		  {
+			"word": "condition",
+			"phonetic": "/kənˈdɪʃən/",
+			"meaning": "the state of something"
+		  },
+		  {
+			"word": "conference",
+			"phonetic": "/ˈkɑnfərəns/",
+			"meaning": "a formal meeting"
+		  },
+		  {
+			"word": "Congress",
+			"phonetic": "/ˈkɑŋɡrəs/",
+			"meaning": "the national legislature of the US"
+		  },
+		  {
+			"word": "consider",
+			"phonetic": "/kənˈsɪdər/",
+			"meaning": "to think about carefully"
+		  },
+		  {
+			"word": "consumer",
+			"phonetic": "/kənˈsumər/",
+			"meaning": "a person who buys goods or services"
+		  },
+		  {
+			"word": "contain",
+			"phonetic": "/kənˈteɪn/",
+			"meaning": "to hold inside"
+		  },
+		  {
+			"word": "continue",
+			"phonetic": "/kənˈtɪnju/",
+			"meaning": "to keep going"
+		  },
+		  {
+			"word": "control",
+			"phonetic": "/kənˈtroʊl/",
+			"meaning": "to have power over"
+		  },
+		  {
+			"word": "cost",
+			"phonetic": "/kɔst/",
+			"meaning": "the price of something"
+		  },
+		  {
+			"word": "could",
+			"phonetic": "/kʊd/",
+			"meaning": "past tense of can; indicates possibility"
+		  },
+		  {
+			"word": "country",
+			"phonetic": "/ˈkʌntri/",
+			"meaning": "a nation with its own government"
+		  },
+		  {
+			"word": "couple",
+			"phonetic": "/ˈkʌpəl/",
+			"meaning": "two people or things together"
+		  },
+		  {
+			"word": "course",
+			"phonetic": "/kɔrs/",
+			"meaning": "a series of lessons or direction of movement"
+		  },
+		  {
+			"word": "court",
+			"phonetic": "/kɔrt/",
+			"meaning": "a place where legal cases are heard"
+		  },
+		  {
+			"word": "cover",
+			"phonetic": "/ˈkʌvər/",
+			"meaning": "to place over or deal with a subject"
+		  },
+		  {
+			"word": "create",
+			"phonetic": "/kriˈeɪt/",
+			"meaning": "to make something new"
+		  },
+		  {
+			"word": "crime",
+			"phonetic": "/kraɪm/",
+			"meaning": "an act against the law"
+		  },
+		  {
+			"word": "cultural",
+			"phonetic": "/ˈkʌlʧərəl/",
+			"meaning": "related to culture"
+		  },
+		  {
+			"word": "culture",
+			"phonetic": "/ˈkʌlʧər/",
+			"meaning": "beliefs and practices of a group"
+		  },
+		  {
+			"word": "cup",
+			"phonetic": "/kʌp/",
+			"meaning": "a small container for drinking"
+		  },
+		  {
+			"word": "current",
+			"phonetic": "/ˈkɜrənt/",
+			"meaning": "present time or a flow of water/electricity"
+		  },
+		  {
+			"word": "customer",
+			"phonetic": "/ˈkʌstəmər/",
+			"meaning": "a person who buys something"
+		  },
+		  {
+			"word": "cut",
+			"phonetic": "/kʌt/",
+			"meaning": "to divide with a sharp tool"
+		  },
+		  {
+			"word": "dark",
+			"phonetic": "/dɑrk/",
+			"meaning": "with little or no light"
+		  },
+		  {
+			"word": "data",
+			"phonetic": "/ˈdeɪtə, ˈdætə/",
+			"meaning": "facts or information"
+		  },
+		  {
+			"word": "daughter",
+			"phonetic": "/ˈdɔtər/",
+			"meaning": "a female child"
+		  },
+		  {
+			"word": "day",
+			"phonetic": "/deɪ/",
+			"meaning": "a 24-hour period"
+		  },
+		  {
+			"word": "dead",
+			"phonetic": "/dɛd/",
+			"meaning": "no longer alive"
+		  },
+		  {
+			"word": "deal",
+			"phonetic": "/dil/",
+			"meaning": "an agreement or arrangement"
+		  },
+		  {
+			"word": "death",
+			"phonetic": "/dɛθ/",
+			"meaning": "the end of life"
+		  },
+		  {
+			"word": "debate",
+			"phonetic": "/dɪˈbeɪt/",
+			"meaning": "a discussion of different views"
+		  },
+		  {
+			"word": "decade",
+			"phonetic": "/ˈdɛkeɪd/",
+			"meaning": "a period of 10 years"
+		  },
+		  {
+			"word": "decide",
+			"phonetic": "/dɪˈsaɪd/",
+			"meaning": "to make a choice"
+		  },
+		  {
+			"word": "decision",
+			"phonetic": "/dɪˈsɪʒən/",
+			"meaning": "a conclusion reached"
+		  },
+		  {
+			"word": "deep",
+			"phonetic": "/dip/",
+			"meaning": "far down or strong"
+		  },
+		  {
+			"word": "defense",
+			"phonetic": "/dɪˈfɛns/",
+			"meaning": "protection from harm; in sports or law"
+		  },
+		  {
+			"word": "degree",
+			"phonetic": "/dɪˈɡri/",
+			"meaning": "a level or an academic award"
+		  },
+		  {
+			"word": "Democrat",
+			"phonetic": "/ˈdɛməˌkræt/",
+			"meaning": "a member of the Democratic Party in the US"
+		  },
+		  {
+			"word": "democratic",
+			"phonetic": "/ˌdɛməˈkrætɪk/",
+			"meaning": "related to democracy"
+		  },
+		  {
+			"word": "describe",
+			"phonetic": "/dɪˈskraɪb/",
+			"meaning": "to explain in words"
+		  },
+		  {
+			"word": "design",
+			"phonetic": "/dɪˈzaɪn/",
+			"meaning": "a plan or drawing"
+		  },
+		  {
+			"word": "despite",
+			"phonetic": "/dɪˈspaɪt/",
+			"meaning": "in spite of"
+		  },
+		  {
+			"word": "detail",
+			"phonetic": "/ˈdiːteɪl/",
+			"meaning": "a small part of something"
+		  },
+		  {
+			"word": "determine",
+			"phonetic": "/dɪˈtɜrmɪn/",
+			"meaning": "to decide or find out"
+		  },
+		  {
+			"word": "develop",
+			"phonetic": "/dɪˈvɛləp/",
+			"meaning": "to grow or improve"
+		  },
+		  {
+			"word": "development",
+			"phonetic": "/dɪˈvɛləpmənt/",
+			"meaning": "the process of growing or improving"
+		  },
+		  {
+			"word": "die",
+			"phonetic": "/daɪ/",
+			"meaning": "to stop living"
+		  },
+		  {
+			"word": "difference",
+			"phonetic": "/ˈdɪfərəns/",
+			"meaning": "a way in which things are not the same"
+		  },
+		  {
+			"word": "different",
+			"phonetic": "/ˈdɪfərənt/",
+			"meaning": "not the same"
+		  },
+		  {
+			"word": "difficult",
+			"phonetic": "/ˈdɪfəkəlt/",
+			"meaning": "hard to do or understand"
+		  },
+		  {
+			"word": "dinner",
+			"phonetic": "/ˈdɪnər/",
+			"meaning": "the main meal of the day"
+		  },
+		  {
+			"word": "direction",
+			"phonetic": "/dəˈrɛkʃən/",
+			"meaning": "a course along which something moves"
+		  },
+		  {
+			"word": "director",
+			"phonetic": "/dəˈrɛktər/",
+			"meaning": "a person who leads an activity or company"
+		  },
+		  {
+			"word": "discover",
+			"phonetic": "/dɪˈskʌvər/",
+			"meaning": "to find something for the first time"
+		  },
+		  {
+			"word": "discuss",
+			"phonetic": "/dɪˈskʌs/",
+			"meaning": "to talk about"
+		  },
+		  {
+			"word": "discussion",
+			"phonetic": "/dɪˈskʌʃən/",
+			"meaning": "a talk about something"
+		  },
+		  {
+			"word": "disease",
+			"phonetic": "/dɪˈziz/",
+			"meaning": "illness"
+		  },
+		  {
+			"word": "do",
+			"phonetic": "/duː/",
+			"meaning": "to perform an action"
+		  },
+		  {
+			"word": "doctor",
+			"phonetic": "/ˈdɑktər/",
+			"meaning": "a person licensed to practice medicine"
+		  },
+		  {
+			"word": "dog",
+			"phonetic": "/dɔɡ/",
+			"meaning": "a common domestic animal"
+		  },
+		  {
+			"word": "door",
+			"phonetic": "/dɔr/",
+			"meaning": "a movable barrier for entering or leaving"
+		  },
+		  {
+			"word": "down",
+			"phonetic": "/daʊn/",
+			"meaning": "toward a lower place"
+		  },
+		  {
+			"word": "draw",
+			"phonetic": "/drɔ/",
+			"meaning": "to make a picture or pull something"
+		  },
+		  {
+			"word": "dream",
+			"phonetic": "/drim/",
+			"meaning": "thoughts or images during sleep; a goal"
+		  },
+		  {
+			"word": "drive",
+			"phonetic": "/draɪv/",
+			"meaning": "to operate a vehicle"
+		  },
+		  {
+			"word": "drop",
+			"phonetic": "/drɑp/",
+			"meaning": "to fall or let something fall"
+		  },
+		  {
+			"word": "drug",
+			"phonetic": "/drʌɡ/",
+			"meaning": "a substance used as medicine or narcotic"
+		  },
+		  {
+			"word": "during",
+			"phonetic": "/ˈdjʊrɪŋ/",
+			"meaning": "throughout a time"
+		  },
+		  {
+			"word": "each",
+			"phonetic": "/iːʧ/",
+			"meaning": "every one separately"
+		  },
+		  {
+			"word": "early",
+			"phonetic": "/ˈɜrli/",
+			"meaning": "before the usual time"
+		  },
+		  {
+			"word": "east",
+			"phonetic": "/iːst/",
+			"meaning": "the direction opposite west"
+		  },
+		  {
+			"word": "easy",
+			"phonetic": "/ˈiːzi/",
+			"meaning": "not difficult"
+		  },
+		  {
+			"word": "eat",
+			"phonetic": "/iːt/",
+			"meaning": "to put food into the mouth and swallow"
+		  },
+		  {
+			"word": "economic",
+			"phonetic": "/ˌɛkəˈnɑmɪk/",
+			"meaning": "related to the economy"
+		  },
+		  {
+			"word": "economy",
+			"phonetic": "/ɪˈkɑnəmi/",
+			"meaning": "the system of money and trade in a country"
+		  },
+		  {
+			"word": "edge",
+			"phonetic": "/ɛdʒ/",
+			"meaning": "the border or part near the boundary"
+		  },
+		  {
+			"word": "education",
+			"phonetic": "/ˌɛʤəˈkeɪʃən/",
+			"meaning": "the process of learning"
+		  },
+		  {
+			"word": "effect",
+			"phonetic": "/ɪˈfɛkt/",
+			"meaning": "a result or influence"
+		  },
+		  {
+			"word": "effort",
+			"phonetic": "/ˈɛfərt/",
+			"meaning": "physical or mental energy used"
+		  },
+		  {
+			"word": "eight",
+			"phonetic": "/eɪt/",
+			"meaning": "the number 8"
+		  },
+		  {
+			"word": "either",
+			"phonetic": "/ˈiðər/",
+			"meaning": "one or the other"
+		  },
+		  {
+			"word": "election",
+			"phonetic": "/ɪˈlɛkʃən/",
+			"meaning": "the act of choosing by voting"
+		  },
+		  {
+			"word": "else",
+			"phonetic": "/ɛls/",
+			"meaning": "in addition; different"
+		  },
+		  {
+			"word": "employee",
+			"phonetic": "/ɛmˈplɔɪiː/",
+			"meaning": "a person who works for someone"
+		  },
+		  {
+			"word": "end",
+			"phonetic": "/ɛnd/",
+			"meaning": "the final part"
+		  },
+		  {
+			"word": "energy",
+			"phonetic": "/ˈɛnərdʒi/",
+			"meaning": "power to do work"
+		  },
+		  {
+			"word": "enjoy",
+			"phonetic": "/ɛnˈʤɔɪ/",
+			"meaning": "to take pleasure in"
+		  },
+		  {
+			"word": "enough",
+			"phonetic": "/ɪˈnʌf/",
+			"meaning": "as much as needed"
+		  },
+		  {
+			"word": "enter",
+			"phonetic": "/ˈɛntər/",
+			"meaning": "to go inside"
+		  },
+		  {
+			"word": "entire",
+			"phonetic": "/ɪnˈtaɪər/",
+			"meaning": "whole; complete"
+		  },
+		  {
+			"word": "environment",
+			"phonetic": "/ɪnˈvaɪrənmənt/",
+			"meaning": "surroundings; natural world"
+		  },
+		  {
+			"word": "environmental",
+			"phonetic": "/ɪnˌvaɪrənˈmɛntəl/",
+			"meaning": "related to the environment"
+		  },
+		  {
+			"word": "especially",
+			"phonetic": "/əˈspɛʃəli/",
+			"meaning": "more than others; particularly"
+		  },
+		  {
+			"word": "establish",
+			"phonetic": "/ɪˈstæblɪʃ/",
+			"meaning": "to set up or create"
+		  },
+		  {
+			"word": "even",
+			"phonetic": "/ˈivən/",
+			"meaning": "flat; equal; surprisingly"
+		  },
+		  {
+			"word": "evening",
+			"phonetic": "/ˈivnɪŋ/",
+			"meaning": "the part of day after afternoon"
+		  },
+		  {
+			"word": "event",
+			"phonetic": "/ɪˈvɛnt/",
+			"meaning": "something that happens"
+		  },
+		  {
+			"word": "ever",
+			"phonetic": "/ˈɛvər/",
+			"meaning": "at any time"
+		  },
+		  {
+			"word": "every",
+			"phonetic": "/ˈɛvri/",
+			"meaning": "each one in a group"
+		  },
+		  {
+			"word": "everybody",
+			"phonetic": "/ˈɛvribɑdi/",
+			"meaning": "all people"
+		  },
+		  {
+			"word": "everyone",
+			"phonetic": "/ˈɛvrɪˌwʌn/",
+			"meaning": "all people"
+		  },
+		  {
+			"word": "everything",
+			"phonetic": "/ˈɛvrɪˌθɪŋ/",
+			"meaning": "all things"
+		  },
+		  {
+			"word": "evidence",
+			"phonetic": "/ˈɛvədəns/",
+			"meaning": "facts or signs showing something is true"
+		  },
+		  {
+			"word": "exactly",
+			"phonetic": "/ɪɡˈzæktli/",
+			"meaning": "precisely"
+		  },
+		  {
+			"word": "example",
+			"phonetic": "/ɪɡˈzæmpəl/",
+			"meaning": "a specific case or instance"
+		  },
+		  {
+			"word": "executive",
+			"phonetic": "/ɪɡˈzɛkjətɪv/",
+			"meaning": "a person with top management power"
+		  },
+		  {
+			"word": "exist",
+			"phonetic": "/ɪɡˈzɪst/",
+			"meaning": "to be real or alive"
+		  },
+		  {
+			"word": "expect",
+			"phonetic": "/ɪkˈspɛkt/",
+			"meaning": "to think something will happen"
+		  },
+		  {
+			"word": "experience",
+			"phonetic": "/ɪkˈspɪriəns/",
+			"meaning": "knowledge from doing or seeing"
+		  },
+		  {
+			"word": "expert",
+			"phonetic": "/ˈɛkspɜrt/",
+			"meaning": "a person with special knowledge"
+		  },
+		  {
+			"word": "explain",
+			"phonetic": "/ɪkˈspleɪn/",
+			"meaning": "to make something clear"
+		  },
+		  {
+			"word": "eye",
+			"phonetic": "/aɪ/",
+			"meaning": "the organ used for seeing"
+		  },
+		  {
+			"word": "face",
+			"phonetic": "/feɪs/",
+			"meaning": "the front of the head"
+		  },
+		  {
+			"word": "fact",
+			"phonetic": "/fækt/",
+			"meaning": "a thing that is true"
+		  },
+		  {
+			"word": "factor",
+			"phonetic": "/ˈfæktər/",
+			"meaning": "something that influences a result"
+		  },
+		  {
+			"word": "fail",
+			"phonetic": "/feɪl/",
+			"meaning": "to not succeed"
+		  },
+		  {
+			"word": "fall",
+			"phonetic": "/fɔl/",
+			"meaning": "to drop down; the season autumn"
+		  },
+		  {
+			"word": "family",
+			"phonetic": "/ˈfæməli/",
+			"meaning": "a group of related people"
+		  },
+		  {
+			"word": "far",
+			"phonetic": "/fɑr/",
+			"meaning": "at a great distance"
+		  },
+		  {
+			"word": "fast",
+			"phonetic": "/fæst/",
+			"meaning": "moving quickly"
+		  },
+		  {
+			"word": "father",
+			"phonetic": "/ˈfɑðər/",
+			"meaning": "a male parent"
+		  },
+		  {
+			"word": "fear",
+			"phonetic": "/fɪr/",
+			"meaning": "a feeling of being afraid"
+		  },
+		  {
+			"word": "federal",
+			"phonetic": "/ˈfɛdərəl/",
+			"meaning": "related to the central government"
+		  },
+		  {
+			"word": "feel",
+			"phonetic": "/fil/",
+			"meaning": "to sense or have emotions"
+		  },
+		  {
+			"word": "feeling",
+			"phonetic": "/ˈfilɪŋ/",
+			"meaning": "an emotion"
+		  },
+		  {
+			"word": "few",
+			"phonetic": "/fju/",
+			"meaning": "not many"
+		  },
+		  {
+			"word": "field",
+			"phonetic": "/fild/",
+			"meaning": "an open land area; a subject of study"
+		  },
+		  {
+			"word": "fight",
+			"phonetic": "/faɪt/",
+			"meaning": "to use force against someone"
+		  },
+		  {
+			"word": "figure",
+			"phonetic": "/ˈfɪɡjər/",
+			"meaning": "a number, shape, or person"
+		  },
+		  {
+			"word": "fill",
+			"phonetic": "/fɪl/",
+			"meaning": "to make full"
+		  },
+		  {
+			"word": "film",
+			"phonetic": "/fɪlm/",
+			"meaning": "a movie"
+		  },
+		  {
+			"word": "final",
+			"phonetic": "/ˈfaɪnəl/",
+			"meaning": "last; ultimate"
+		  },
+		  {
+			"word": "finally",
+			"phonetic": "/ˈfaɪnəli/",
+			"meaning": "at the end"
+		  },
+		  {
+			"word": "financial",
+			"phonetic": "/fəˈnænʃəl/",
+			"meaning": "related to money"
+		  },
+		  {
+			"word": "find",
+			"phonetic": "/faɪnd/",
+			"meaning": "to discover or locate"
+		  },
+		  {
+			"word": "fine",
+			"phonetic": "/faɪn/",
+			"meaning": "good; thin; a penalty"
+		  },
+		  {
+			"word": "finger",
+			"phonetic": "/ˈfɪŋɡər/",
+			"meaning": "one of the five parts of a hand"
+		  },
+		  {
+			"word": "finish",
+			"phonetic": "/ˈfɪnɪʃ/",
+			"meaning": "to complete"
+		  },
+		  {
+			"word": "fire",
+			"phonetic": "/ˈfaɪər/",
+			"meaning": "flames, or to dismiss from a job"
+		  },
+		  {
+			"word": "firm",
+			"phonetic": "/fɜrm/",
+			"meaning": "a company; hard or solid"
+		  },
+		  {
+			"word": "first",
+			"phonetic": "/fɜrst/",
+			"meaning": "before all others"
+		  },
+		  {
+			"word": "fish",
+			"phonetic": "/fɪʃ/",
+			"meaning": "a water animal with gills"
+		  },
+		  {
+			"word": "five",
+			"phonetic": "/faɪv/",
+			"meaning": "the number 5"
+		  },
+		  {
+			"word": "floor",
+			"phonetic": "/flɔr/",
+			"meaning": "the surface inside a room"
+		  },
+		  {
+			"word": "fly",
+			"phonetic": "/flaɪ/",
+			"meaning": "to move in the air"
+		  },
+		  {
+			"word": "focus",
+			"phonetic": "/ˈfoʊkəs/",
+			"meaning": "to direct attention to"
+		  },
+		  {
+			"word": "follow",
+			"phonetic": "/ˈfɑloʊ/",
+			"meaning": "to go behind or come after"
+		  },
+		  {
+			"word": "food",
+			"phonetic": "/fuːd/",
+			"meaning": "what people or animals eat"
+		  },
+		  {
+			"word": "foot",
+			"phonetic": "/fʊt/",
+			"meaning": "the lower part of the leg"
+		  },
+		  {
+			"word": "for",
+			"phonetic": "/fɔr/",
+			"meaning": "used to show purpose or reason"
+		  },
+		  {
+			"word": "force",
+			"phonetic": "/fɔrs/",
+			"meaning": "strength or power"
+		  },
+		  {
+			"word": "foreign",
+			"phonetic": "/ˈfɔrən/",
+			"meaning": "from another country"
+		  },
+		  {
+			"word": "forget",
+			"phonetic": "/fərˈɡɛt/",
+			"meaning": "to fail to remember"
+		  },
+		  {
+			"word": "form",
+			"phonetic": "/fɔrm/",
+			"meaning": "a shape or type; a paper document"
+		  },
+		  {
+			"word": "former",
+			"phonetic": "/ˈfɔrmər/",
+			"meaning": "previous"
+		  },
+		  {
+			"word": "forward",
+			"phonetic": "/ˈfɔrwərd/",
+			"meaning": "toward the front"
+		  },
+		  {
+			"word": "four",
+			"phonetic": "/fɔr/",
+			"meaning": "the number 4"
+		  },
+		  {
+			"word": "free",
+			"phonetic": "/fri/",
+			"meaning": "not under control; costing nothing"
+		  },
+		  {
+			"word": "friend",
+			"phonetic": "/frɛnd/",
+			"meaning": "a person you like and trust"
+		  },
+		  {
+			"word": "from",
+			"phonetic": "/frʌm/",
+			"meaning": "indicating origin or starting point"
+		  },
+		  {
+			"word": "front",
+			"phonetic": "/frʌnt/",
+			"meaning": "the forward part"
+		  },
+		  {
+			"word": "full",
+			"phonetic": "/fʊl/",
+			"meaning": "containing as much as possible"
+		  },
+		  {
+			"word": "fund",
+			"phonetic": "/fʌnd/",
+			"meaning": "money set aside for a purpose"
+		  },
+		  {
+			"word": "future",
+			"phonetic": "/ˈfjuʧər/",
+			"meaning": "time that has not yet come"
+		  },
+		  {
+			"word": "game",
+			"phonetic": "/ɡeɪm/",
+			"meaning": "an activity with rules; a sport or play"
+		  },
+		  {
+			"word": "garden",
+			"phonetic": "/ˈɡɑrdən/",
+			"meaning": "a piece of land for growing plants"
+		  },
+		  {
+			"word": "gas",
+			"phonetic": "/ɡæs/",
+			"meaning": "a substance like air; fuel for cars"
+		  },
+		  {
+			"word": "general",
+			"phonetic": "/ˈdʒɛnərəl/",
+			"meaning": "common; not specific; a high military rank"
+		  },
+		  {
+			"word": "generation",
+			"phonetic": "/ˌdʒɛnəˈreɪʃən/",
+			"meaning": "all people born around the same time"
+		  },
+		  {
+			"word": "get",
+			"phonetic": "/ɡɛt/",
+			"meaning": "to obtain, receive, or become"
+		  },
+		  {
+			"word": "girl",
+			"phonetic": "/ɡɜrl/",
+			"meaning": "a female child"
+		  },
+		  {
+			"word": "give",
+			"phonetic": "/ɡɪv/",
+			"meaning": "to provide something to someone"
+		  },
+		  {
+			"word": "glass",
+			"phonetic": "/ɡlæs/",
+			"meaning": "a container for drinking; transparent material"
+		  },
+		  {
+			"word": "go",
+			"phonetic": "/ɡoʊ/",
+			"meaning": "to move from one place to another"
+		  },
+		  {
+			"word": "goal",
+			"phonetic": "/ɡoʊl/",
+			"meaning": "an aim or target"
+		  },
+		  {
+			"word": "good",
+			"phonetic": "/ɡʊd/",
+			"meaning": "having positive quality"
+		  },
+		  {
+			"word": "government",
+			"phonetic": "/ˈɡʌvərnmənt/",
+			"meaning": "the system by which a country is governed"
+		  },
+		  {
+			"word": "great",
+			"phonetic": "/ɡreɪt/",
+			"meaning": "very good or large"
+		  },
+		  {
+			"word": "green",
+			"phonetic": "/ɡrin/",
+			"meaning": "the color of grass or leaves"
+		  },
+		  {
+			"word": "ground",
+			"phonetic": "/ɡraʊnd/",
+			"meaning": "the solid surface of the earth"
+		  },
+		  {
+			"word": "group",
+			"phonetic": "/ɡruːp/",
+			"meaning": "a number of people or things together"
+		  },
+		  {
+			"word": "grow",
+			"phonetic": "/ɡroʊ/",
+			"meaning": "to increase in size or develop"
+		  },
+		  {
+			"word": "growth",
+			"phonetic": "/ɡroʊθ/",
+			"meaning": "the process of growing"
+		  },
+		  {
+			"word": "guess",
+			"phonetic": "/ɡɛs/",
+			"meaning": "to estimate or suppose"
+		  },
+		  {
+			"word": "gun",
+			"phonetic": "/ɡʌn/",
+			"meaning": "a weapon that shoots bullets"
+		  },
+		  {
+			"word": "guy",
+			"phonetic": "/ɡaɪ/",
+			"meaning": "a man"
+		  },
+		  {
+			"word": "hair",
+			"phonetic": "/hɛr/",
+			"meaning": "threadlike growth on the head or body"
+		  },
+		  {
+			"word": "half",
+			"phonetic": "/hæf/",
+			"meaning": "one of two equal parts"
+		  },
+		  {
+			"word": "hand",
+			"phonetic": "/hænd/",
+			"meaning": "the end of the arm used for holding"
+		  },
+		  {
+			"word": "hang",
+			"phonetic": "/hæŋ/",
+			"meaning": "to suspend or attach from above"
+		  },
+		  {
+			"word": "happen",
+			"phonetic": "/ˈhæpən/",
+			"meaning": "to occur"
+		  },
+		  {
+			"word": "happy",
+			"phonetic": "/ˈhæpi/",
+			"meaning": "feeling pleasure or joy"
+		  },
+		  {
+			"word": "hard",
+			"phonetic": "/hɑrd/",
+			"meaning": "solid or difficult"
+		  },
+		  {
+			"word": "have",
+			"phonetic": "/hæv/",
+			"meaning": "to own, hold, or possess"
+		  },
+		  {
+			"word": "he",
+			"phonetic": "/hi/",
+			"meaning": "a male person or animal"
+		  },
+		  {
+			"word": "head",
+			"phonetic": "/hɛd/",
+			"meaning": "the upper part of the body"
+		  },
+		  {
+			"word": "health",
+			"phonetic": "/hɛlθ/",
+			"meaning": "the condition of body or mind"
+		  },
+		  {
+			"word": "hear",
+			"phonetic": "/hɪr/",
+			"meaning": "to perceive sound"
+		  },
+		  {
+			"word": "heart",
+			"phonetic": "/hɑrt/",
+			"meaning": "the organ that pumps blood; core of something"
+		  },
+		  {
+			"word": "heat",
+			"phonetic": "/hit/",
+			"meaning": "high temperature"
+		  },
+		  {
+			"word": "heavy",
+			"phonetic": "/ˈhɛvi/",
+			"meaning": "of great weight"
+		  },
+		  {
+			"word": "help",
+			"phonetic": "/hɛlp/",
+			"meaning": "to assist"
+		  },
+		  {
+			"word": "her",
+			"phonetic": "/hɜr/",
+			"meaning": "possessive pronoun referring to a female"
+		  },
+		  {
+			"word": "here",
+			"phonetic": "/hɪr/",
+			"meaning": "in this place"
+		  },
+		  {
+			"word": "herself",
+			"phonetic": "/hɜrˈsɛlf/",
+			"meaning": "referring to a female as object of verb"
+		  },
+		  {
+			"word": "high",
+			"phonetic": "/haɪ/",
+			"meaning": "tall or elevated"
+		  },
+		  {
+			"word": "him",
+			"phonetic": "/hɪm/",
+			"meaning": "object pronoun referring to a male"
+		  },
+		  {
+			"word": "himself",
+			"phonetic": "/hɪmˈsɛlf/",
+			"meaning": "referring to a male as object"
+		  },
+		  {
+			"word": "his",
+			"phonetic": "/hɪz/",
+			"meaning": "possessive pronoun referring to a male"
+		  },
+		  {
+			"word": "history",
+			"phonetic": "/ˈhɪstəri/",
+			"meaning": "study of past events"
+		  },
+		  {
+			"word": "hit",
+			"phonetic": "/hɪt/",
+			"meaning": "to strike"
+		  },
+		  {
+			"word": "hold",
+			"phonetic": "/hoʊld/",
+			"meaning": "to grasp or keep"
+		  },
+		  {
+			"word": "home",
+			"phonetic": "/hoʊm/",
+			"meaning": "the place where one lives"
+		  },
+		  {
+			"word": "hope",
+			"phonetic": "/hoʊp/",
+			"meaning": "to desire something will happen"
+		  },
+		  {
+			"word": "hospital",
+			"phonetic": "/ˈhɑspɪtəl/",
+			"meaning": "place for medical care"
+		  },
+		  {
+			"word": "hot",
+			"phonetic": "/hɑt/",
+			"meaning": "having a high temperature"
+		  },
+		  {
+			"word": "hotel",
+			"phonetic": "/hoʊˈtɛl/",
+			"meaning": "a place where people stay when traveling"
+		  },
+		  {
+			"word": "hour",
+			"phonetic": "/aʊər/",
+			"meaning": "60 minutes; a time period"
+		  },
+		  {
+			"word": "house",
+			"phonetic": "/haʊs/",
+			"meaning": "a building for people to live in"
+		  },
+		  {
+			"word": "how",
+			"phonetic": "/haʊ/",
+			"meaning": "in what way; by what means"
+		  },
+		  {
+			"word": "however",
+			"phonetic": "/haʊˈɛvər/",
+			"meaning": "nevertheless; but"
+		  },
+		  {
+			"word": "huge",
+			"phonetic": "/hjuːdʒ/",
+			"meaning": "very large"
+		  },
+		  {
+			"word": "human",
+			"phonetic": "/ˈhjumən/",
+			"meaning": "relating to people"
+		  },
+		  {
+			"word": "hundred",
+			"phonetic": "/ˈhʌndrəd/",
+			"meaning": "the number 100"
+		  },
+		  {
+			"word": "husband",
+			"phonetic": "/ˈhʌzbənd/",
+			"meaning": "a married man"
+		  },
+		  {
+			"word": "I",
+			"phonetic": "/aɪ/",
+			"meaning": "the person speaking or writing"
+		  },
+		  {
+			"word": "idea",
+			"phonetic": "/aɪˈdiə/",
+			"meaning": "a thought or plan"
+		  },
+		  {
+			"word": "identify",
+			"phonetic": "/aɪˈdɛntɪˌfaɪ/",
+			"meaning": "to recognize or name"
+		  },
+		  {
+			"word": "if",
+			"phonetic": "/ɪf/",
+			"meaning": "on the condition that"
+		  },
+		  {
+			"word": "image",
+			"phonetic": "/ˈɪmɪdʒ/",
+			"meaning": "a picture or representation"
+		  },
+		  {
+			"word": "imagine",
+			"phonetic": "/ɪˈmædʒən/",
+			"meaning": "to form a picture in the mind"
+		  },
+		  {
+			"word": "impact",
+			"phonetic": "/ˈɪmpækt/",
+			"meaning": "a strong effect"
+		  },
+		  {
+			"word": "important",
+			"phonetic": "/ɪmˈpɔrtənt/",
+			"meaning": "of great significance"
+		  },
+		  {
+			"word": "improve",
+			"phonetic": "/ɪmˈpruv/",
+			"meaning": "to make better"
+		  },
+		  {
+			"word": "in",
+			"phonetic": "/ɪn/",
+			"meaning": "inside or within"
+		  },
+		  {
+			"word": "include",
+			"phonetic": "/ɪnˈklud/",
+			"meaning": "to make part of a whole"
+		  },
+		  {
+			"word": "including",
+			"phonetic": "/ɪnˈkludɪŋ/",
+			"meaning": "as part of"
+		  },
+		  {
+			"word": "increase",
+			"phonetic": "/ˈɪnkriːs/",
+			"meaning": "to become larger or more"
+		  },
+		  {
+			"word": "indeed",
+			"phonetic": "/ɪnˈdid/",
+			"meaning": "really; truly"
+		  },
+		  {
+			"word": "indicate",
+			"phonetic": "/ˈɪndəˌkeɪt/",
+			"meaning": "to show or point out"
+		  },
+		  {
+			"word": "individual",
+			"phonetic": "/ˌɪndəˈvɪdʒuəl/",
+			"meaning": "a single person or thing"
+		  },
+		  {
+			"word": "industry",
+			"phonetic": "/ˈɪndəstri/",
+			"meaning": "business or manufacturing"
+		  },
+		  {
+			"word": "information",
+			"phonetic": "/ˌɪnfərˈmeɪʃən/",
+			"meaning": "facts or knowledge"
+		  },
+		  {
+			"word": "inside",
+			"phonetic": "/ɪnˈsaɪd/",
+			"meaning": "within"
+		  },
+		  {
+			"word": "instead",
+			"phonetic": "/ɪnˈstɛd/",
+			"meaning": "as a substitute"
+		  },
+		  {
+			"word": "institution",
+			"phonetic": "/ˌɪnstɪˈtuʃən/",
+			"meaning": "an organization or establishment"
+		  },
+		  {
+			"word": "interest",
+			"phonetic": "/ˈɪntrəst/",
+			"meaning": "curiosity or advantage"
+		  },
+		  {
+			"word": "interesting",
+			"phonetic": "/ˈɪntrəstɪŋ/",
+			"meaning": "holding attention"
+		  },
+		  {
+			"word": "international",
+			"phonetic": "/ˌɪntərˈnæʃənəl/",
+			"meaning": "between nations"
+		  },
+		  {
+			"word": "interview",
+			"phonetic": "/ˈɪntərˌvju/",
+			"meaning": "a meeting for questions or discussion"
+		  },
+		  {
+			"word": "into",
+			"phonetic": "/ˈɪntu/",
+			"meaning": "to the inside of"
+		  },
+		  {
+			"word": "investment",
+			"phonetic": "/ɪnˈvɛstmənt/",
+			"meaning": "money put in for profit"
+		  },
+		  {
+			"word": "involve",
+			"phonetic": "/ɪnˈvɑlv/",
+			"meaning": "to include or engage"
+		  },
+		  {
+			"word": "issue",
+			"phonetic": "/ˈɪʃu/",
+			"meaning": "a topic or problem"
+		  },
+		  {
+			"word": "it",
+			"phonetic": "/ɪt/",
+			"meaning": "used to refer to a thing"
+		  },
+		  {
+			"word": "item",
+			"phonetic": "/ˈaɪtəm/",
+			"meaning": "an individual thing"
+		  },
+		  {
+			"word": "its",
+			"phonetic": "/ɪts/",
+			"meaning": "possessive pronoun for it"
+		  },
+		  {
+			"word": "itself",
+			"phonetic": "/ɪtˈsɛlf/",
+			"meaning": "referring to a thing as object"
+		  },
+		  {
+			"word": "job",
+			"phonetic": "/ʤɑb/",
+			"meaning": "work done for pay"
+		  },
+		  {
+			"word": "join",
+			"phonetic": "/ʤɔɪn/",
+			"meaning": "to connect or become a member"
+		  },
+		  {
+			"word": "just",
+			"phonetic": "/ʤʌst/",
+			"meaning": "exactly; fair; recently"
+		  },
+		  {
+			"word": "keep",
+			"phonetic": "/kip/",
+			"meaning": "to hold or maintain"
+		  },
+		  {
+			"word": "key",
+			"phonetic": "/ki/",
+			"meaning": "important; a device to open a lock"
+		  },
+		  {
+			"word": "kid",
+			"phonetic": "/kɪd/",
+			"meaning": "a child"
+		  },
+		  {
+			"word": "kill",
+			"phonetic": "/kɪl/",
+			"meaning": "to cause death"
+		  },
+		  {
+			"word": "kind",
+			"phonetic": "/kaɪnd/",
+			"meaning": "type; gentle"
+		  },
+		  {
+			"word": "kitchen",
+			"phonetic": "/ˈkɪʧən/",
+			"meaning": "room for cooking"
+		  },
+		  {
+			"word": "know",
+			"phonetic": "/noʊ/",
+			"meaning": "to have knowledge"
+		  },
+		  {
+			"word": "knowledge",
+			"phonetic": "/ˈnɑlɪdʒ/",
+			"meaning": "facts, information, and skills"
+		  },
+		  {
+			"word": "land",
+			"phonetic": "/lænd/",
+			"meaning": "ground or territory"
+		  },
+		  {
+			"word": "language",
+			"phonetic": "/ˈlæŋɡwɪdʒ/",
+			"meaning": "a system of communication"
+		  },
+		  {
+			"word": "large",
+			"phonetic": "/lɑrdʒ/",
+			"meaning": "big in size"
+		  },
+		  {
+			"word": "last",
+			"phonetic": "/læst/",
+			"meaning": "final; to continue"
+		  },
+		  {
+			"word": "late",
+			"phonetic": "/leɪt/",
+			"meaning": "after the expected time"
+		  },
+		  {
+			"word": "later",
+			"phonetic": "/ˈleɪtər/",
+			"meaning": "afterwards"
+		  },
+		  {
+			"word": "laugh",
+			"phonetic": "/læf/",
+			"meaning": "to make a happy sound"
+		  },
+		  {
+			"word": "law",
+			"phonetic": "/lɔ/",
+			"meaning": "rules enforced by a government"
+		  },
+		  {
+			"word": "lawyer",
+			"phonetic": "/ˈlɔjər/",
+			"meaning": "a person who practices law"
+		  },
+		  {
+			"word": "lay",
+			"phonetic": "/leɪ/",
+			"meaning": "to put something down"
+		  },
+		  {
+			"word": "lead",
+			"phonetic": "/liːd/",
+			"meaning": "to guide or be in charge"
+		  },
+		  {
+			"word": "leader",
+			"phonetic": "/ˈliːdər/",
+			"meaning": "a person in charge"
+		  },
+		  {
+			"word": "learn",
+			"phonetic": "/lɜrn/",
+			"meaning": "to gain knowledge"
+		  },
+		  {
+			"word": "least",
+			"phonetic": "/list/",
+			"meaning": "smallest in amount"
+		  },
+		  {
+			"word": "leave",
+			"phonetic": "/liv/",
+			"meaning": "to go away; to allow to remain"
+		  },
+		  {
+			"word": "left",
+			"phonetic": "/lɛft/",
+			"meaning": "opposite of right; departed"
+		  },
+		  {
+			"word": "leg",
+			"phonetic": "/lɛɡ/",
+			"meaning": "limb used for standing or walking"
+		  },
+		  {
+			"word": "legal",
+			"phonetic": "/ˈliɡəl/",
+			"meaning": "related to law"
+		  },
+		  {
+			"word": "less",
+			"phonetic": "/lɛs/",
+			"meaning": "smaller in amount"
+		  },
+		  {
+			"word": "let",
+			"phonetic": "/lɛt/",
+			"meaning": "to allow"
+		  },
+		  {
+			"word": "letter",
+			"phonetic": "/ˈlɛtər/",
+			"meaning": "a written message"
+		  },
+		  {
+			"word": "level",
+			"phonetic": "/ˈlɛvəl/",
+			"meaning": "height or degree"
+		  },
+		  {
+			"word": "lie",
+			"phonetic": "/laɪ/",
+			"meaning": "to recline; an untruth"
+		  },
+		  {
+			"word": "life",
+			"phonetic": "/laɪf/",
+			"meaning": "existence; living"
+		  },
+		  {
+			"word": "light",
+			"phonetic": "/laɪt/",
+			"meaning": "visible brightness; not heavy"
+		  },
+		  {
+			"word": "like",
+			"phonetic": "/laɪk/",
+			"meaning": "to enjoy or similar to"
+		  },
+		  {
+			"word": "likely",
+			"phonetic": "/ˈlaɪkli/",
+			"meaning": "probable"
+		  },
+		  {
+			"word": "line",
+			"phonetic": "/laɪn/",
+			"meaning": "a long narrow mark or row"
+		  },
+		  {
+			"word": "list",
+			"phonetic": "/lɪst/",
+			"meaning": "a series of items"
+		  },
+		  {
+			"word": "listen",
+			"phonetic": "/ˈlɪsən/",
+			"meaning": "to pay attention to sound"
+		  },
+		  {
+			"word": "little",
+			"phonetic": "/ˈlɪtəl/",
+			"meaning": "small in size or amount"
+		  },
+		  {
+			"word": "live",
+			"phonetic": "/lɪv/",
+			"meaning": "to be alive; to reside"
+		  },
+		  {
+			"word": "local",
+			"phonetic": "/ˈloʊkəl/",
+			"meaning": "related to a nearby area"
+		  },
+		  {
+			"word": "long",
+			"phonetic": "/lɔŋ/",
+			"meaning": "having great length; duration"
+		  },
+		  {
+			"word": "look",
+			"phonetic": "/lʊk/",
+			"meaning": "to direct eyes toward"
+		  },
+		  {
+			"word": "lose",
+			"phonetic": "/luːz/",
+			"meaning": "to fail to keep or win"
+		  },
+		  {
+			"word": "loss",
+			"phonetic": "/lɔs/",
+			"meaning": "the fact of losing"
+		  },
+		  {
+			"word": "lot",
+			"phonetic": "/lɑt/",
+			"meaning": "many; a group; a piece of land"
+		  },
+		  {
+			"word": "love",
+			"phonetic": "/lʌv/",
+			"meaning": "a deep feeling of affection"
+		  },
+		  {
+			"word": "low",
+			"phonetic": "/loʊ/",
+			"meaning": "not high; small in amount"
+		  },
+		  {
+			"word": "machine",
+			"phonetic": "/məˈʃin/",
+			"meaning": "a device that does work"
+		  },
+		  {
+			"word": "magazine",
+			"phonetic": "/ˌmæɡəˈzin/",
+			"meaning": "a publication with articles"
+		  },
+		  {
+			"word": "main",
+			"phonetic": "/meɪn/",
+			"meaning": "most important"
+		  },
+		  {
+			"word": "maintain",
+			"phonetic": "/meɪnˈteɪn/",
+			"meaning": "to keep in good condition"
+		  },
+		  {
+			"word": "major",
+			"phonetic": "/ˈmeɪdʒər/",
+			"meaning": "important; a field of study"
+		  },
+		  {
+			"word": "majority",
+			"phonetic": "/məˈdʒɔrəti/",
+			"meaning": "more than half"
+		  },
+		  {
+			"word": "make",
+			"phonetic": "/meɪk/",
+			"meaning": "to create or cause"
+		  },
+		  {
+			"word": "man",
+			"phonetic": "/mæn/",
+			"meaning": "an adult male"
+		  },
+		  {
+			"word": "manage",
+			"phonetic": "/ˈmænɪdʒ/",
+			"meaning": "to control or organize"
+		  },
+		  {
+			"word": "management",
+			"phonetic": "/ˈmænɪdʒmənt/",
+			"meaning": "the act of managing"
+		  },
+		  {
+			"word": "manager",
+			"phonetic": "/ˈmænɪdʒər/",
+			"meaning": "a person who manages"
+		  },
+		  {
+			"word": "many",
+			"phonetic": "/ˈmɛni/",
+			"meaning": "a large number"
+		  },
+		  {
+			"word": "market",
+			"phonetic": "/ˈmɑrkɪt/",
+			"meaning": "a place to buy and sell; demand"
+		  },
+		  {
+			"word": "marriage",
+			"phonetic": "/ˈmærɪdʒ/",
+			"meaning": "the state of being married"
+		  },
+		  {
+			"word": "material",
+			"phonetic": "/məˈtɪriəl/",
+			"meaning": "substance or fabric"
+		  },
+		  {
+			"word": "matter",
+			"phonetic": "/ˈmætər/",
+			"meaning": "a subject or thing"
+		  },
+		  {
+			"word": "may",
+			"phonetic": "/meɪ/",
+			"meaning": "to be allowed; might"
+		  },
+		  {
+			"word": "maybe",
+			"phonetic": "/ˈmeɪbi/",
+			"meaning": "perhaps"
+		  },
+		  {
+			"word": "me",
+			"phonetic": "/mi/",
+			"meaning": "the speaker as object"
+		  },
+		  {
+			"word": "mean",
+			"phonetic": "/miːn/",
+			"meaning": "to signify; to intend"
+		  },
+		  {
+			"word": "measure",
+			"phonetic": "/ˈmɛʒər/",
+			"meaning": "to find the size, amount, or degree"
+		  },
+		  {
+			"word": "media",
+			"phonetic": "/ˈmidiə/",
+			"meaning": "means of communication"
+		  },
+		  {
+			"word": "medical",
+			"phonetic": "/ˈmɛdɪkəl/",
+			"meaning": "related to medicine"
+		  },
+		  {
+			"word": "meet",
+			"phonetic": "/mit/",
+			"meaning": "to come together"
+		  },
+		  {
+			"word": "meeting",
+			"phonetic": "/ˈmitɪŋ/",
+			"meaning": "an assembly of people"
+		  },
+		  {
+			"word": "member",
+			"phonetic": "/ˈmɛmbər/",
+			"meaning": "a person belonging to a group"
+		  },
+		  {
+			"word": "memory",
+			"phonetic": "/ˈmɛməri/",
+			"meaning": "the ability to recall information"
+		  },
+		  {
+			"word": "mention",
+			"phonetic": "/ˈmɛnʃən/",
+			"meaning": "to refer to"
+		  },
+		  {
+			"word": "message",
+			"phonetic": "/ˈmɛsɪdʒ/",
+			"meaning": "information sent to someone"
+		  },
+		  {
+			"word": "method",
+			"phonetic": "/ˈmɛθəd/",
+			"meaning": "a way of doing something"
+		  },
+		  {
+			"word": "middle",
+			"phonetic": "/ˈmɪdəl/",
+			"meaning": "the center"
+		  },
+		  {
+			"word": "might",
+			"phonetic": "/maɪt/",
+			"meaning": "used to express possibility"
+		  },
+		  {
+			"word": "military",
+			"phonetic": "/ˈmɪlɪˌtɛri/",
+			"meaning": "related to the armed forces"
+		  },
+		  {
+			"word": "million",
+			"phonetic": "/ˈmɪljən/",
+			"meaning": "the number 1,000,000"
+		  },
+		  {
+			"word": "mind",
+			"phonetic": "/maɪnd/",
+			"meaning": "the thinking part of a person"
+		  },
+		  {
+			"word": "minute",
+			"phonetic": "/ˈmɪnət/",
+			"meaning": "60 seconds; very small"
+		  },
+		  {
+			"word": "miss",
+			"phonetic": "/mɪs/",
+			"meaning": "to fail to hit; to fail to attend"
+		  },
+		  {
+			"word": "mission",
+			"phonetic": "/ˈmɪʃən/",
+			"meaning": "a task or purpose"
+		  },
+		  {
+			"word": "model",
+			"phonetic": "/ˈmɑdəl/",
+			"meaning": "a representation or example"
+		  },
+		  {
+			"word": "modern",
+			"phonetic": "/ˈmɑdərn/",
+			"meaning": "related to the present time"
+		  },
+		  {
+			"word": "moment",
+			"phonetic": "/ˈmoʊmənt/",
+			"meaning": "a very short period of time"
+		  },
+		  {
+			"word": "money",
+			"phonetic": "/ˈmʌni/",
+			"meaning": "currency used for exchange"
+		  },
+		  {
+			"word": "month",
+			"phonetic": "/mʌnθ/",
+			"meaning": "one of 12 parts of a year"
+		  },
+		  {
+			"word": "more",
+			"phonetic": "/mɔr/",
+			"meaning": "additional; a greater amount"
+		  },
+		  {
+			"word": "morning",
+			"phonetic": "/ˈmɔrnɪŋ/",
+			"meaning": "early part of the day"
+		  },
+		  {
+			"word": "most",
+			"phonetic": "/moʊst/",
+			"meaning": "the majority; very"
+		  },
+		  {
+			"word": "mother",
+			"phonetic": "/ˈmʌðər/",
+			"meaning": "a female parent"
+		  },
+		  {
+			"word": "mouth",
+			"phonetic": "/maʊθ/",
+			"meaning": "the opening in the face for eating and speaking"
+		  },
+		  {
+			"word": "move",
+			"phonetic": "/muːv/",
+			"meaning": "to change position"
+		  },
+		  {
+			"word": "movement",
+			"phonetic": "/ˈmuːvmənt/",
+			"meaning": "an act of moving"
+		  },
+		  {
+			"word": "movie",
+			"phonetic": "/ˈmuːvi/",
+			"meaning": "a film"
+		  },
+		  {
+			"word": "Mr.",
+			"phonetic": "/ˈmɪstər/",
+			"meaning": "title for a man"
+		  },
+		  {
+			"word": "Mrs.",
+			"phonetic": "/ˈmɪsɪz/",
+			"meaning": "title for a married woman"
+		  },
+		  {
+			"word": "Ms.",
+			"phonetic": "/mɪz/",
+			"meaning": "title for a woman"
+		  },
+		  {
+			"word": "much",
+			"phonetic": "/mʌʧ/",
+			"meaning": "a large amount"
+		  },
+		  {
+			"word": "music",
+			"phonetic": "/ˈmjuzɪk/",
+			"meaning": "organized sound for enjoyment"
+		  },
+		  {
+			"word": "must",
+			"phonetic": "/mʌst/",
+			"meaning": "required; necessary"
+		  },
+		  {
+			"word": "my",
+			"phonetic": "/maɪ/",
+			"meaning": "possessive pronoun"
+		  },
+		  {
+			"word": "myself",
+			"phonetic": "/maɪˈsɛlf/",
+			"meaning": "referring to the speaker as object"
+		  },
+		  {
+			"word": "name",
+			"phonetic": "/neɪm/",
+			"meaning": "a word by which a person or thing is known"
+		  },
+		  {
+			"word": "nation",
+			"phonetic": "/ˈneɪʃən/",
+			"meaning": "a country or people with shared culture"
+		  },
+		  {
+			"word": "national",
+			"phonetic": "/ˈnæʃənəl/",
+			"meaning": "relating to a nation"
+		  },
+		  {
+			"word": "natural",
+			"phonetic": "/ˈnætʃərəl/",
+			"meaning": "existing in nature; not made by humans"
+		  },
+		  {
+			"word": "nature",
+			"phonetic": "/ˈneɪʧər/",
+			"meaning": "the physical world; inherent qualities"
+		  },
+		  {
+			"word": "near",
+			"phonetic": "/nɪr/",
+			"meaning": "close to"
+		  },
+		  {
+			"word": "nearly",
+			"phonetic": "/ˈnɪrli/",
+			"meaning": "almost"
+		  },
+		  {
+			"word": "necessary",
+			"phonetic": "/ˈnɛsəˌsɛri/",
+			"meaning": "required; essential"
+		  },
+		  {
+			"word": "need",
+			"phonetic": "/nid/",
+			"meaning": "to require something"
+		  },
+		  {
+			"word": "network",
+			"phonetic": "/ˈnɛtwɜrk/",
+			"meaning": "a group of interconnected things"
+		  },
+		  {
+			"word": "produce",
+			"phonetic": "/ˈproʊdus/",
+			"meaning": "to make or create; fruits and vegetables"
+		  },
+		  {
+			"word": "product",
+			"phonetic": "/ˈprɑdʌkt/",
+			"meaning": "something produced or made"
+		  },
+		  {
+			"word": "professional",
+			"phonetic": "/prəˈfɛʃənəl/",
+			"meaning": "related to work; a skilled person"
+		  },
+		  {
+			"word": "professor",
+			"phonetic": "/prəˈfɛsər/",
+			"meaning": "a teacher at a college"
+		  },
+		  {
+			"word": "program",
+			"phonetic": "/ˈproʊɡræm/",
+			"meaning": "a plan; a set of instructions"
+		  },
+		  {
+			"word": "project",
+			"phonetic": "/ˈprɑʤɛkt/",
+			"meaning": "a planned task"
+		  },
+		  {
+			"word": "property",
+			"phonetic": "/ˈprɑpərti/",
+			"meaning": "something owned; a characteristic"
+		  },
+		  {
+			"word": "protect",
+			"phonetic": "/prəˈtɛkt/",
+			"meaning": "to keep safe from harm"
+		  },
+		  {
+			"word": "prove",
+			"phonetic": "/pruv/",
+			"meaning": "to demonstrate truth by evidence"
+		  },
+		  {
+			"word": "provide",
+			"phonetic": "/prəˈvaɪd/",
+			"meaning": "to supply or make available"
+		  },
+		  {
+			"word": "public",
+			"phonetic": "/ˈpʌblɪk/",
+			"meaning": "relating to people in general; open to all"
+		  },
+		  {
+			"word": "pull",
+			"phonetic": "/pʊl/",
+			"meaning": "to draw or haul toward oneself"
+		  },
+		  {
+			"word": "purpose",
+			"phonetic": "/ˈpɜrpəs/",
+			"meaning": "the reason for which something is done"
+		  },
+		  {
+			"word": "push",
+			"phonetic": "/pʊʃ/",
+			"meaning": "to apply force to move something away"
+		  },
+		  {
+			"word": "put",
+			"phonetic": "/pʊt/",
+			"meaning": "to place something in a position"
+		  },
+		  {
+			"word": "quality",
+			"phonetic": "/ˈkwɑləti/",
+			"meaning": "the standard or feature of something"
+		  },
+		  {
+			"word": "question",
+			"phonetic": "/ˈkwɛsʧən/",
+			"meaning": "a sentence asking for information"
+		  },
+		  {
+			"word": "within",
+			"phonetic": "/wɪˈðɪn/",
+			"meaning": "inside; not beyond"
+		  },
+		  {
+			"word": "without",
+			"phonetic": "/wɪˈðaʊt/",
+			"meaning": "not having; lacking"
+		  },
+		  {
+			"word": "woman",
+			"phonetic": "/ˈwʊmən/",
+			"meaning": "an adult female human being"
+		  },
+		  {
+			"word": "wonder",
+			"phonetic": "/ˈwʌndər/",
+			"meaning": "a feeling of amazement; to question"
+		  },
+		  {
+			"word": "word",
+			"phonetic": "/wɜrd/",
+			"meaning": "a single unit of language"
+		  },
+		  {
+			"word": "work",
+			"phonetic": "/wɜrk/",
+			"meaning": "activity involving effort; employment"
+		  },
+		  {
+			"word": "worker",
+			"phonetic": "/ˈwɜrkər/",
+			"meaning": "a person who works"
+		  },
+		  {
+			"word": "world",
+			"phonetic": "/wɜrld/",
+			"meaning": "the earth and all its people"
+		  },
+		  {
+			"word": "worry",
+			"phonetic": "/ˈwɜri/",
+			"meaning": "to feel anxious or troubled"
+		  },
+		  {
+			"word": "write",
+			"phonetic": "/raɪt/",
+			"meaning": "to form letters or words on a surface"
+		  },
+		  {
+			"word": "writer",
+			"phonetic": "/ˈraɪtər/",
+			"meaning": "a person who writes"
+		  },
+		  {
+			"word": "wrong",
+			"phonetic": "/rɔŋ/",
+			"meaning": "not correct; bad"
+		  },
+		  {
+			"word": "yard",
+			"phonetic": "/jɑrd/",
+			"meaning": "an area of ground near a building"
+		  },
+		  {
+			"word": "yeah",
+			"phonetic": "/jæ/",
+			"meaning": "informal yes"
+		  },
+		  {
+			"word": "year",
+			"phonetic": "/jɪr/",
+			"meaning": "a period of twelve months"
+		  },
+		  {
+			"word": "yes",
+			"phonetic": "/jɛs/",
+			"meaning": "used to give an affirmative reply"
+		  },
+		  {
+			"word": "yet",
+			"phonetic": "/jɛt/",
+			"meaning": "up until now; still"
+		  },
+		  {
+			"word": "you",
+			"phonetic": "/ju/",
+			"meaning": "the person or people addressed"
+		  },
+		  {
+			"word": "young",
+			"phonetic": "/jʌŋ/",
+			"meaning": "not old; in early life"
+		  },
+		  {
+			"word": "your",
+			"phonetic": "/jʊr/",
+			"meaning": "belonging to you"
+		  },
+		  {
+			"word": "yourself",
+			"phonetic": "/jʊrˈsɛlf/",
+			"meaning": "you personally"
+		  }
+      ];
+
+      const wordDisplay = document.getElementById('wordDisplay');
+      const guessInput = document.getElementById('guessInput');
+      const guessBtn = document.getElementById('guessBtn');
+      const hintBtn = document.getElementById('hintBtn');
+      const nextBtn = document.getElementById('nextBtn');
+      const message = document.getElementById('message');
+      const guessedLettersEl = document.getElementById('guessedLetters');
+      const wordLengthEl = document.getElementById('wordLength');
+      const correctCountEl = document.getElementById('correctCount');
+      const scoreEl = document.getElementById('score');
+      const confettiEl = document.getElementById('confetti');
+
+      const soundCorrect = document.getElementById('sound-correct');
+      const soundWrong = document.getElementById('sound-wrong');
+      const soundComplete = document.getElementById('sound-complete');
+
+	  let secretObj = '';
+      let secret = '';
+      let revealed = [];
+      let hintedIndexes = new Set();
+      let guessedLetters = new Set();
+      let correctWords = 0;
+	  let hintedLetters = [];
+	  
+	  function showMeaning(){
+		document.getElementById('phonetic').innerHTML = secretObj.phonetic + "  ";
+		document.getElementById('wordMeaning').innerHTML = 'meaning:  '+secretObj.meaning;
+	  }
+	  
+	  function hideMeaning(){
+		document.getElementById('phonetic').innerHTML = '';
+		document.getElementById('wordMeaning').innerHTML = '';
+	  }
+
+      function pickWord(){
+		hideMeaning();
+		hintedLetters=[];
+		secretObj = WORDS[Math.floor(Math.random()*WORDS.length)];
+        secret = secretObj.word;
+        revealed = Array(secret.length).fill(false);
+        hintedIndexes = new Set();
+        guessedLetters = new Set();
+        let revealCount = Math.max(1, Math.floor(secret.length * 0.6));
+        const available = [...Array(secret.length).keys()];
+        for(let i=0; i<revealCount; i++){
+          const idx = available.splice(Math.floor(Math.random()*available.length),1)[0];
+          revealed[idx] = true;
+        }
+		getHidenLetters(revealed, secret);
+		console.log("hintedLetters====="+hintedLetters);
+        updateUI();
+        message.textContent = 'New word chosen — start guessing!';
+        message.style.color = 'var(--muted)';
+      }
+
+	  function getHidenLetters(revealed, secret){
+		  for(var i=0;i<revealed.length;i++) {
+			  if(!revealed[i]) {
+				  hintedLetters.push(secret[i]);
+			  }
+			  
+		  }
+	  }
+
+      function updateUI(){
+        wordDisplay.innerHTML = '';
+        for(let i=0;i<secret.length;i++){
+          const span = document.createElement('div');
+          span.className = 'letter' + (revealed[i] ? ' revealed' : '') + (hintedIndexes.has(i) ? ' hint' : '');
+          span.textContent = revealed[i] || hintedIndexes.has(i) ? secret[i] : '';
+          wordDisplay.appendChild(span);
+        }
+
+        guessedLettersEl.textContent = Array.from(guessedLetters).join(', ') || '-';
+        wordLengthEl.textContent = secret.length + ' letters';
+        correctCountEl.textContent = correctWords;
+        scoreEl.textContent = correctWords;
+      }
+
+      function showMessage(text, type='info'){
+        message.textContent = text;
+        if(type==='success'){
+          message.style.color = 'var(--success)';
+        } else if(type==='error'){
+          message.style.color = '#b91c1c';
+        } else if(type==='hint-success'){
+          message.style.color = 'var(--success)';
+        } else {
+          message.style.color = 'var(--muted)';
+        }
+      }
+	  
+	  function containsAllElements(A, B) {
+			const setA = new Set(A);
+			return B.every(item => setA.has(item));
+		}
+ 
+
+
+      function checkGuess(guess){
+        if(!guess) return;
+        guess = guess.trim().toLowerCase();
+        if(!/^[a-z]+$/.test(guess)){
+          showMessage('Please enter letters only.', 'error');
+          return;
+        }
+
+        for(const ch of guess){
+			guessedLetters.add(ch); 
+		}
+
+		console.log("guess====="+guess);
+		console.log("secret====="+secret);
+		console.log("guessedLetters====="+JSON.stringify(guessedLetters));
+		console.log("revealed====="+JSON.stringify(revealed));
+		console.log("hintedIndexes====="+JSON.stringify(hintedIndexes));
+		
+		if(containsAllElements(guessedLetters, hintedLetters)){
+        //if(guess === secret){
+			afterSucc();
+          
+        } else {
+          let any = false;
+          for(let i=0;i<secret.length;i++){
+            if(guess.includes(secret[i])){ 
+				revealed[i]=true; 
+				any=true; 
+			}
+          }
+          updateUI();
+          if(any){
+            showMessage('Some letters matched — keep going!', 'hint-success');
+			//showMeaning();
+            soundCorrect.currentTime = 0; soundCorrect.play();
+          } else {
+            showMessage('Not correct yet. Try again!','error');
+            soundWrong.currentTime = 0; soundWrong.play();
+          }
+        }
+      }
+	  
+	  function afterSucc(){
+		 revealed = Array(secret.length).fill(true);
+          updateUI();
+          correctWords += 1;
+          showMessage('🎉 Correct! Great job!', 'success');
+          burstConfetti();
+          correctCountEl.textContent = correctWords;
+          scoreEl.textContent = correctWords;
+          soundComplete.currentTime = 0; soundComplete.play();
+	  }
+
+      function hintOne(){
+		    const candidates = [];
+			for(let i=0;i<secret.length;i++){
+			  if(!revealed[i] && !hintedIndexes.has(i)) {
+				candidates.push(i);
+			  }
+			}
+			if(candidates.length===0){ showMessage('No more letters to reveal.'); return; }
+			const idx = candidates[Math.floor(Math.random()*candidates.length)];
+			hintedIndexes.add(idx);
+			guessedLetters.add(secret[idx]);
+			for(let i=0;i<secret.length;i++){
+			  if(secret[i] === secret[idx] && !revealed[i]){ 
+				hintedIndexes.add(i);
+			  }
+			}
+			updateUI();
+			showMessage('A letter has been revealed as a hint.');
+			//if(containsAllElements(guessedLetters, hintedLetters)){
+				//afterSucc();
+			//}
+      }
+
+      function burstConfetti(){
+        const colors = ['#ff5252','#ffb020','#ffd166','#4ade80','#60a5fa','#c084fc'];
+        for(let i=0;i<24;i++){
+          const div = document.createElement('div');
+          div.className = 'piece';
+          div.style.left = (50 + (Math.random()-0.5)*60) + '%';
+          div.style.top = Math.random()*20 + '%';
+          div.style.background = colors[Math.floor(Math.random()*colors.length)];
+          div.style.transform = `rotate(${Math.random()*360}deg)`;
+          div.style.animationDuration = (1000 + Math.random()*1200) + 'ms';
+          confettiEl.appendChild(div);
+          setTimeout(()=>{ div.remove(); }, 2200);
+        }
+      }
+
+      guessBtn.addEventListener('click', ()=>{ checkGuess(guessInput.value); guessInput.value=''; guessInput.focus(); });
+      guessInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ checkGuess(guessInput.value); guessInput.value=''; } });
+      hintBtn.addEventListener('click', hintOne);
+      nextBtn.addEventListener('click', pickWord);
+
+      pickWord();
+      guessInput.focus();
+
+    })();
+  </script>
+</body>
+</html>
