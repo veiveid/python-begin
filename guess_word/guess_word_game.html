@@ -3205,6 +3205,7 @@
       }
 	  
 	  function afterSucc(){
+		 showMeaning();
 		 revealed = Array(secret.length).fill(true);
           updateUI();
           correctWords += 1;
@@ -3233,9 +3234,9 @@
 			}
 			updateUI();
 			showMessage('A letter has been revealed as a hint.');
-			//if(containsAllElements(guessedLetters, hintedLetters)){
-				//afterSucc();
-			//}
+			if(containsAllElements(guessedLetters, hintedLetters)){
+				showMeaning();
+			}
       }
 
       function burstConfetti(){
